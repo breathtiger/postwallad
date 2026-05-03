@@ -79,16 +79,16 @@ function jsonp(action, callbackFn) {
   const callbackName = '_cb_' + action + '_' + Date.now();
   const script = document.createElement('script');
 
-  // 逾時保護：8 秒後自動觸發空資料
+  // 逾時保護：30 秒後自動觸發空資料
   const timer = setTimeout(() => {
-    window[callbackName] = null;
+    window[callbackName] = function() {};  // no-op 避免遲到回應 crash
     script.remove();
     callbackFn([]);
-  }, 8000);
+  }, 30000);
 
   window[callbackName] = function(data) {
     clearTimeout(timer);
-    window[callbackName] = null;
+    window[callbackName] = function() {};  // no-op 避免重複呼叫
     script.remove();
     callbackFn(data);
   };
@@ -119,12 +119,12 @@ function buildCarousel(slides) {
   // 過濾掉無效資料（空白、#N/A）
   const valid = (val) => val && String(val).trim() !== '' && String(val).trim() !== '#N/A';
 
-  if (slides && slides.length > 0) {
+  if (Array.isArray(slides) && slides.length > 0) {
     slides = slides.filter(s => valid(s.imageUrl) || valid(s.slogan));
   }
 
   // 備用投影片（直接用 Google Drive lh3 圖片網址）
-  if (!slides || slides.length === 0) {
+  if (!Array.isArray(slides) || slides.length === 0) {
     slides = [
       {
         slogan: '深耕基隆核心商圈，精準掌握港灣人氣商機。',
@@ -207,8 +207,8 @@ let _allLocations = [];
 let _allSpaces    = [];
 
 function renderLocations(locations, spaces) {
-  _allLocations = locations || [];
-  _allSpaces    = spaces    || [];
+  _allLocations = Array.isArray(locations) ? locations : [];
+  _allSpaces    = Array.isArray(spaces)    ? spaces    : [];
 
   document.getElementById('loadingState').classList.add('d-none');
 
@@ -361,13 +361,13 @@ function isAvailable(space) {
   let _spcLoaded = false;
 
   jsonp('locations', function(data) {
-    _location  = (data || []).find(l => l['location_id'] === locationId) || null;
+    _location  = (Array.isArray(data) ? data : []).find(l => l['location_id'] === locationId) || null;
     _locLoaded = true;
     tryRender();
   });
 
   jsonp('spaces', function(data) {
-    _spaces    = (data || []).filter(s => s['location_id'] === locationId && isAvailable(s));
+    _spaces    = (Array.isArray(data) ? data : []).filter(s => s['location_id'] === locationId && isAvailable(s));
     _spcLoaded = true;
     tryRender();
   });
