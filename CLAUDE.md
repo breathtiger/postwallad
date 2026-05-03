@@ -111,13 +111,33 @@ postwallad/
 | `phone` | 聯絡電話 |
 | `email` | 電子信箱 |
 | `address` | 公司地址（可空） |
-| `totalAmount` | 總金額 |
-| `items` | JSON 陣列，每項 `{space_id, months, price}` |
+| `totalAmount` | 總金額（未稅，各版位 price 加總） |
+| `items` | JSON 陣列，每項 `{space_id, months, price, locationName, w, h}` |
+
+回傳：`{ success, bookingId, pdfUrl }`（pdfUrl 為空代表 PDF 生成失敗，不影響訂單寫入）
 
 ### Apps Script 部署注意事項
 - 每次「建立新部署」會產生**全新 URL**，舊 URL 仍指向舊版本
 - 若要更新現有 URL：選「管理部署 → 編輯 → 選新版本」，URL 不變
 - `site.js` 第 1 行 `apiUrl` 必須與目前活躍部署的 URL 一致
+- 新增 DriveApp / UrlFetchApp / MailApp 後，需在 `appsscript.json` 明確宣告 OAuth 範圍，並重新部署觸發授權
+
+### Script Properties（雲端 Apps Script 設定，勿 commit 實際值）
+| 屬性名稱 | 用途 |
+|---------|------|
+| `SPREADSHEET_ID` | 主資料庫 Sheets ID |
+| `QUOTE_TEMPLATE_ID` | 報價單範本 Sheets 檔案 ID |
+| `QUOTE_FOLDER_ID` | 產生的 PDF 存放 Drive 資料夾 ID |
+
+### appsscript.json 必要 OAuth 範圍
+```json
+"oauthScopes": [
+  "https://www.googleapis.com/auth/spreadsheets",
+  "https://www.googleapis.com/auth/drive",
+  "https://www.googleapis.com/auth/script.external_request",
+  "https://www.googleapis.com/auth/gmail.send"
+]
+```
 
 ---
 
@@ -134,9 +154,15 @@ postwallad/
 - **導覽列 badge**：全站 4 頁導覽列顯示「選擇版位報價」連結，紅底黃字跳動數字（`cartBounce` CSS 動畫），無版位時自動隱藏
 - Icon 系統：全站從 Bootstrap Icons 遷移至 Font Awesome 6（`fa-solid fa-*` 格式，cdnjs CDN）
 - SEO 動態注入：`site.js` 頁面載入時呼叫 `?action=seo`，依頁面檔名匹配 SEO 工作表並更新 title / meta / og 標籤
+- **報價單 PDF 自動生成（程式完成，OAuth 待解）**：
+  - Code.gs 新增 `generateQuotePdf()`：複製「郵局牆面廣告報價單-範本」Sheets 的「報價單範本」分頁，以 `booking_id` 命名新分頁，填入甲方資訊（B3~B8）、動態版位列（增減列數）、金額/稅額（5%）/總價（COL G）、民國年日期；UrlFetchApp 匯出 PDF 存入 Drive 資料夾
+  - Code.gs 新增 `sendQuoteEmail()`：MailApp 寄信給客戶（附 PDF）+ CC service@breathtiger.com
+  - quotation.html 成功頁新增「下載報價單 PDF」紅色按鈕（pdfUrl 有值才顯示）
+  - site.js：items JSON 新增 `locationName / w / h`；JSONP 逾時延長至 30 秒；onSuccess 處理 pdfUrl
 
-### 🔲 待開發
-（目前無已知待開發項目）
+### 🔲 待完成
+- **Apps Script OAuth 範圍授權**：web app 部署需在 `appsscript.json` 加入 drive / external_request / gmail.send 範圍，重新部署觸發授權後 PDF 生成才會在正式環境運作
+- **git push**：site.js、quotation.html、Code.gs 本次修改尚未推送至 GitHub Pages
 
 ### ⚠️ 待確認
 - ad_spaces 欄 I、O、Q、S 的確切欄位名稱（現用 `includes()` 模糊比對）
@@ -167,7 +193,7 @@ parseNum(val)  // 去除非數字字元後 parseFloat
 
 // 詢價購物車（sessionStorage 跨頁面）
 const CART_KEY = 'pw_inquiry_cart';
-// cart 結構：Array of { space_id, location_id, spaceName, locationName, months, price }
+// cart 結構：Array of { space_id, location_id, locationName, months, total, w, h, monthlyRent, fixedCost }
 
 // 前往詢價頁（保存 cart 至 sessionStorage 後跳轉）
 goToQuotation()  // 定義在 initSpaces IIFE 內，掛至 window.goToQuotation

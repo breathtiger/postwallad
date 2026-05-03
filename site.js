@@ -1,4 +1,4 @@
-const apiUrl = "https://script.google.com/macros/s/AKfycbxsWqFfnQmQ5msIK97WzTJid8MaDaZQwKVJNNfzZoKazkkgzq9I9H0peLXrMnZ397E7MQ/exec";
+const apiUrl = "https://script.google.com/macros/s/AKfycbyfTT1RUMcIZGYlqSYte0CPrAq3cvWG58w2C64g8VmVoFsqQC8sA-fp9eKThIRxEETTkg/exec";
 
 // ════════════════════════════════
 // 全域購物車（sessionStorage 跨頁面持久化）
@@ -821,7 +821,7 @@ function showSpacesError(msg) {
 
     const callbackName = '_cb_booking_' + Date.now();
     const script = document.createElement('script');
-    const timer = setTimeout(() => { cleanup(); onError('連線逾時，請稍後再試'); }, 15000);
+    const timer = setTimeout(() => { cleanup(); onError('連線逾時，請稍後再試'); }, 30000);
 
     function cleanup() {
       clearTimeout(timer);
@@ -831,7 +831,7 @@ function showSpacesError(msg) {
 
     window[callbackName] = function(result) {
       cleanup();
-      result && result.success ? onSuccess(result.bookingId) : onError(result && result.error);
+      result && result.success ? onSuccess(result.bookingId, result.pdfUrl) : onError(result && result.error);
     };
     script.onerror = function() { cleanup(); onError('網路錯誤，請稍後再試'); };
 
@@ -846,7 +846,12 @@ function showSpacesError(msg) {
       address:     document.getElementById('qAddress').value.trim(),
       totalAmount: String(grandTotal),
       items:       JSON.stringify(cartItems.map(i => ({
-                     space_id: i.space_id, months: i.months, price: i.total
+                     space_id:     i.space_id,
+                     months:       i.months,
+                     price:        i.total,
+                     locationName: i.locationName || '',
+                     w:            i.w || '-',
+                     h:            i.h || '-'
                    })))
     });
 
@@ -854,10 +859,14 @@ function showSpacesError(msg) {
     document.body.appendChild(script);
   });
 
-  function onSuccess(bookingId) {
+  function onSuccess(bookingId, pdfUrl) {
     contentEl.classList.add('d-none');
     successEl.classList.remove('d-none');
     if (bookingId) document.getElementById('bookingIdDisplay').textContent = bookingId;
+    if (pdfUrl) {
+      const dlBtn = document.getElementById('pdfDownloadBtn');
+      if (dlBtn) { dlBtn.href = pdfUrl; dlBtn.classList.remove('d-none'); }
+    }
     cartSave([]);
     updateNavBadge();
   }
