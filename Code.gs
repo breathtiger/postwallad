@@ -193,7 +193,7 @@ function generateQuotePdf(bookingId, customer, items) {
   outer: for (let r = amountRow + 2; r < allData.length; r++) {
     for (let c = 0; c < allData[r].length; c++) {
       const val = String(allData[r][c] || '');
-      if (val.includes('日期') || val.includes('中華民國')) {
+      if (val.startsWith('日期') || val.includes('中華民國')) {
         newSheet.getRange(r + 1, c + 1).setValue(dateStr);
         break outer;
       }

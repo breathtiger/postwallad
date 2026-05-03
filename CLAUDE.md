@@ -154,26 +154,36 @@ postwallad/
 - **導覽列 badge**：全站 4 頁導覽列顯示「選擇版位報價」連結，紅底黃字跳動數字（`cartBounce` CSS 動畫），無版位時自動隱藏
 - Icon 系統：全站從 Bootstrap Icons 遷移至 Font Awesome 6（`fa-solid fa-*` 格式，cdnjs CDN）
 - SEO 動態注入：`site.js` 頁面載入時呼叫 `?action=seo`，依頁面檔名匹配 SEO 工作表並更新 title / meta / og 標籤
-- **報價單 PDF 自動生成（程式完成，OAuth 待解）**：
-  - Code.gs 新增 `generateQuotePdf()`：複製「郵局牆面廣告報價單-範本」Sheets 的「報價單範本」分頁，以 `booking_id` 命名新分頁，填入甲方資訊（B3~B8）、動態版位列（增減列數）、金額/稅額（5%）/總價（COL G）、民國年日期；UrlFetchApp 匯出 PDF 存入 Drive 資料夾
-  - Code.gs 新增 `sendQuoteEmail()`：MailApp 寄信給客戶（附 PDF）+ CC service@breathtiger.com
+- **報價單 PDF 自動生成（正式運作中）**：
+  - Code.gs 新增 `generateQuotePdf()`：複製「報價單範本」分頁→以 `booking_id` 命名→填甲方資訊（B3~B8）→動態版位列→金額/稅額（5%）/總價（COL G）→民國年日期；UrlFetchApp 匯出 PDF 存 Drive
+  - Code.gs 新增 `sendQuoteEmail()`：PDF 附件寄送客戶 + CC service@breathtiger.com
+  - appsscript.json 已加入必要 OAuth 範圍（Spreadsheets / Drive / external_request / gmail.send）並完成授權
   - quotation.html 成功頁新增「下載報價單 PDF」紅色按鈕（pdfUrl 有值才顯示）
-  - site.js：items JSON 新增 `locationName / w / h`；JSONP 逾時延長至 30 秒；onSuccess 處理 pdfUrl
+  - site.js：items JSON 含 `locationName / w / h`；JSONP 逾時 30 秒；onSuccess 處理 pdfUrl
+- **site.js 防崩潰強化**：
+  - 所有 JSONP callback 改用 `Array.isArray()` 驗證（原 `.length` 檢查遇錯誤物件會崩潰）
+  - JSONP timeout 後改設 no-op 函式（原設 `null` 導致遲到回應觸發 "is not a function" 錯誤）
+  - 逾時從 8 秒延長至 30 秒，適應 Apps Script cold start 延遲
 
 ### 🔲 待完成
-- **Apps Script OAuth 範圍授權**：web app 部署需在 `appsscript.json` 加入 drive / external_request / gmail.send 範圍，重新部署觸發授權後 PDF 生成才會在正式環境運作
-- **git push**：site.js、quotation.html、Code.gs 本次修改尚未推送至 GitHub Pages
+- **Code.gs 日期搜尋 bug（已修本地，待同步雲端）**：
+  - 原因：`val.includes('日期')` 誤中注意事項第2點的「施工**日期**」，覆蓋該格
+  - 修正：改為 `val.startsWith('日期')` — 本地 Code.gs 已修，需複製至雲端編輯器並「建立新版本」重新部署
 
 ### ⚠️ 待確認
 - ad_spaces 欄 I、O、Q、S 的確切欄位名稱（現用 `includes()` 模糊比對）
 - 部分版位 NT$ 格式的數值是否由 Apps Script 以數字或字串回傳
+
+### ⚠️ 已知地雷（避免重蹈）
+- **更新 Code.gs 雲端版時，絕對不能貼入本地 `Code.gs`**：本地第 19 行 `SPREADSHEET_ID` 是佔位符 `'YOUR_SPREADSHEET_ID'`，貼入雲端會清除真實 ID，導致全站 API 回傳 `{"error":"Illegal spreadsheet id"}` 而完全失效
+- **新增 OAuth scope 後務必「管理部署 → 建立新版本」**，否則新 scope 不生效（不需要新建部署，URL 不需要換）
 
 ---
 
 ## 重要程式碼慣例
 
 ```javascript
-// JSONP 載入（8秒逾時保護）
+// JSONP 載入（30秒逾時保護，timeout 後設 no-op 避免遲到回應 crash）
 jsonp('spaces', function(data) { ... });
 
 // XSS 防護（所有使用者可見字串都要過）
