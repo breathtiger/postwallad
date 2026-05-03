@@ -33,6 +33,8 @@ function doGet(e) {
       return jsonpResponse(callback, getSheetData('bookings'));
     case 'seo':
       return jsonpResponse(callback, getSheetData('SEO'));
+    case 'submitBooking':
+      return submitBookingHandler(e, callback);
     default:
       return jsonpResponse(callback, { error: 'unknown action: ' + action });
   }
@@ -57,6 +59,51 @@ function getSheetData(sheetName) {
   } catch (err) {
     return { error: err.message };
   }
+}
+
+// ── 訂單送出：寫入 customers + bookings ──────────────────────────
+function submitBookingHandler(e, callback) {
+  try {
+    const ss        = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const bookingId = generateBookingId();
+    const ts        = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd HH:mm:ss');
+    const items     = JSON.parse(e.parameter.items || '[]');
+
+    // customers 表（一筆訂單一行）
+    const custSheet = ss.getSheetByName('customers');
+    custSheet.appendRow([
+      bookingId,
+      e.parameter.companyName || '',
+      e.parameter.taxId       || '',
+      e.parameter.contactName || '',
+      e.parameter.phone       || '',
+      e.parameter.email       || '',
+      e.parameter.address     || '',
+      parseFloat(e.parameter.totalAmount) || 0,
+      ts
+    ]);
+
+    // bookings 表（每個版位一行）
+    const bookSheet = ss.getSheetByName('bookings');
+    items.forEach(function(item) {
+      bookSheet.appendRow([
+        bookingId,
+        item.space_id || '',
+        item.months   || 1,
+        item.price    || 0
+      ]);
+    });
+
+    return jsonpResponse(callback, { success: true, bookingId: bookingId });
+  } catch (err) {
+    return jsonpResponse(callback, { success: false, error: err.message });
+  }
+}
+
+function generateBookingId() {
+  const date = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyyMMdd');
+  const rand = Math.random().toString(36).substr(2, 4).toUpperCase();
+  return 'BK-' + date + '-' + rand;
 }
 
 // ── 工具：包裝 JSONP 回應 ────────────────────────────────────────

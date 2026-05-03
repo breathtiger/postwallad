@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>填寫詢價資料｜郵局牆面廣告版位</title>
+  <meta name="robots" content="noindex, nofollow">
+
+  <!-- Google Tag Manager -->
+  <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+  new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+  j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+  'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+  })(window,document,'script','dataLayer','GTM-KD93GGT9');</script>
+  <!-- End Google Tag Manager -->
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+  <link href="style.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+  <!-- Google Tag Manager (noscript) -->
+  <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-KD93GGT9"
+  height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+  <!-- End Google Tag Manager (noscript) -->
+
+  <!-- 導覽列 -->
+  <nav class="navbar navbar-expand-lg navbar-dark fixed-top shadow-sm"
+       style="background-color:#007B40" role="navigation" aria-label="主選單">
+    <div class="container-fluid px-3">
+      <a class="navbar-brand fw-bold d-flex align-items-center gap-2" href="index.html">
+        <i class="fa-solid fa-building" aria-hidden="true"></i>
+        <span>中華郵政 牆面廣告版位</span>
+      </a>
+      <button class="navbar-toggler border-0" type="button"
+        data-bs-toggle="collapse" data-bs-target="#navMenu"
+        aria-controls="navMenu" aria-expanded="false" aria-label="展開選單">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navMenu">
+        <ul class="navbar-nav ms-auto gap-lg-1">
+          <li class="nav-item"><a class="nav-link" href="index.html">首頁</a></li>
+          <li class="nav-item"><a class="nav-link" href="locations.html">局所列表</a></li>
+          <li class="nav-item"><a class="nav-link" href="locations.html#contact">聯絡我們</a></li>
+          <li class="nav-item">
+            <a class="nav-link d-none fw-semibold" href="quotation.html" id="navCartLink">
+              選擇版位報價
+              <span class="badge rounded-pill ms-1" id="navCartBadge"
+                    style="background:#dc3545;color:#ffd700">0</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <!-- 主內容 -->
+  <div class="container" style="padding-top:70px;max-width:720px" id="quotationPage">
+
+    <!-- 載入中 -->
+    <div id="quotationLoading" class="text-center py-5">
+      <div class="spinner-border text-success" role="status">
+        <span class="visually-hidden">載入中</span>
+      </div>
+    </div>
+
+    <!-- 錯誤（無詢價資料） -->
+    <div id="quotationError" class="d-none py-5 text-center">
+      <i class="fa-solid fa-circle-exclamation text-danger" style="font-size:3rem"></i>
+      <p class="mt-3 text-muted">
+        找不到詢價資料，請先從
+        <a href="locations.html" class="text-success">局所列表</a>
+        選擇版位。
+      </p>
+    </div>
+
+    <!-- 主內容（詢價摘要 + 表單） -->
+    <div id="quotationContent" class="d-none">
+
+      <!-- 麵包屑 -->
+      <nav aria-label="breadcrumb" class="mt-3">
+        <ol class="breadcrumb small">
+          <li class="breadcrumb-item">
+            <a href="locations.html" class="text-success text-decoration-none">局所列表</a>
+          </li>
+          <li class="breadcrumb-item active">填寫詢價資料</li>
+        </ol>
+      </nav>
+
+      <!-- 詢價摘要 -->
+      <div class="bg-white rounded shadow-sm p-3 mb-3">
+        <h2 class="h6 fw-bold mb-3">
+          <i class="fa-solid fa-clipboard-list text-success me-2"></i>詢價版位確認
+        </h2>
+        <div id="quoteSummary">
+          <!-- 由 site.js initQuotation 動態填入 -->
+        </div>
+      </div>
+
+      <!-- 客戶資料表單 -->
+      <div class="bg-white rounded shadow-sm p-3 mb-4">
+        <h2 class="h6 fw-bold mb-3">
+          <i class="fa-solid fa-user text-success me-2"></i>填寫聯絡資料
+        </h2>
+        <form id="quotationForm" novalidate>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold" for="qCompanyName">
+                公司名稱 <span class="text-danger">*</span>
+              </label>
+              <input type="text" class="form-control form-control-sm" id="qCompanyName"
+                     placeholder="例：虎之呼吸科技有限公司" required>
+              <div class="invalid-feedback">請填寫公司名稱</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold" for="qTaxId">統一編號</label>
+              <input type="text" class="form-control form-control-sm" id="qTaxId"
+                     placeholder="8碼統編（個人可免填）" maxlength="8" inputmode="numeric">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold" for="qContactName">
+                聯絡人姓名 <span class="text-danger">*</span>
+              </label>
+              <input type="text" class="form-control form-control-sm" id="qContactName"
+                     placeholder="例：王大明" required>
+              <div class="invalid-feedback">請填寫聯絡人姓名</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold" for="qPhone">
+                聯絡電話 <span class="text-danger">*</span>
+              </label>
+              <input type="tel" class="form-control form-control-sm" id="qPhone"
+                     placeholder="例：0912345678" required>
+              <div class="invalid-feedback">請填寫聯絡電話</div>
+            </div>
+            <div class="col-12">
+              <label class="form-label small fw-semibold" for="qEmail">
+                電子信箱 <span class="text-danger">*</span>
+              </label>
+              <input type="email" class="form-control form-control-sm" id="qEmail"
+                     placeholder="例：contact@example.com" required>
+              <div class="invalid-feedback">請填寫有效的電子信箱</div>
+            </div>
+            <div class="col-12">
+              <label class="form-label small fw-semibold" for="qAddress">公司地址</label>
+              <input type="text" class="form-control form-control-sm" id="qAddress"
+                     placeholder="例：基隆市仁愛區○○路○號">
+            </div>
+          </div>
+
+          <div id="formError" class="alert alert-danger mt-3 d-none small" role="alert"></div>
+
+          <div class="d-flex justify-content-end mt-4">
+            <button type="submit" class="btn btn-danger px-4 fw-bold" id="submitBtn">
+              <i class="fa-solid fa-paper-plane me-2"></i>送出詢價
+            </button>
+          </div>
+        </form>
+      </div>
+
+    </div>
+
+    <!-- 送出成功 -->
+    <div id="quotationSuccess" class="d-none text-center py-5">
+      <i class="fa-solid fa-circle-check text-success" style="font-size:4rem"></i>
+      <h2 class="h5 fw-bold mt-3">詢價已送出！</h2>
+      <p class="text-muted small mb-1">您的詢價編號：</p>
+      <p class="fw-bold fs-5 text-success mb-3" id="bookingIdDisplay"></p>
+      <p class="text-muted small mb-4">我們將盡快與您聯繫，如有急需可透過以下方式聯絡我們：</p>
+      <div class="d-flex justify-content-center gap-3 mb-4">
+        <a href="https://lin.ee/Rtr3Tlq4" target="_blank" rel="noopener"
+           class="btn btn-success">
+          <i class="fa-solid fa-comment-dots me-2"></i>LINE 聯繫
+        </a>
+        <a href="mailto:service@breathtiger.com" class="btn btn-outline-secondary">
+          <i class="fa-solid fa-envelope me-2"></i>Email
+        </a>
+      </div>
+      <a href="locations.html" class="btn btn-outline-success btn-sm">
+        <i class="fa-solid fa-arrow-left me-1"></i>返回局所列表
+      </a>
+    </div>
+
+  </div>
+
+  <!-- 頁尾 -->
+  <footer class="bg-dark text-white py-5 mt-5" role="contentinfo">
+    <div class="container">
+      <div class="row g-4 align-items-start">
+        <div class="col-md-4">
+          <h5 class="fw-bold mb-3" style="color:#4ade80">中華郵政 牆面廣告版位</h5>
+          <p class="text-white-50 small mb-0">
+            服務區域：基隆市全區・新北市汐止區・新北市瑞芳區<br>
+            本網站資料由 Google Sheets 即時提供，版位狀態以實際確認為準。
+          </p>
+        </div>
+        <div class="col-md-4">
+          <h6 class="fw-bold mb-3 text-white">聯絡我們</h6>
+          <ul class="list-unstyled text-white-50 small mb-0">
+            <li class="mb-2">
+              <i class="fa-solid fa-building me-2"></i>
+              <a href="https://www.breathtiger.com" target="_blank" rel="noopener"
+                 class="text-white-50 text-decoration-none">虎之呼吸科技有限公司</a>
+            </li>
+            <li class="mb-2">
+              <i class="fa-solid fa-envelope me-2"></i>
+              <a href="mailto:service@breathtiger.com"
+                 class="text-white-50 text-decoration-none">service@breathtiger.com</a>
+            </li>
+            <li><i class="fa-solid fa-comment-dots me-2"></i>LINE 加入好友諮詢</li>
+          </ul>
+        </div>
+        <div class="col-md-4 d-flex flex-column align-items-md-end align-items-start">
+          <a href="https://lin.ee/Rtr3Tlq4" target="_blank" rel="noopener">
+            <img src="https://scdn.line-apps.com/n/line_add_friends/btn/zh-Hant.png"
+                 alt="加入好友" height="36" border="0">
+          </a>
+        </div>
+      </div>
+      <hr class="border-secondary my-4">
+      <p class="text-white-50 text-center mb-0" style="font-size:12px">
+        &copy; <span id="footerYear"></span> 虎之呼吸科技有限公司｜版權所有，翻印必究
+      </p>
+    </div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="site.js"></script>
+  <script>document.getElementById('footerYear').textContent = new Date().getFullYear();</script>
+</body>
+</html>

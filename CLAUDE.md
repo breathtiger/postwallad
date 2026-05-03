@@ -18,8 +18,9 @@
 postwallad/
 ├── index.html       # 首頁（輪播、特色介紹、服務區域、三步驟）
 ├── locations.html   # 郵局列表頁（篩選、搜尋、卡片展示）
-├── spaces.html      # 版位詳細頁（已完成）
-├── site.js          # 主程式（輪播 + 郵局列表 + 版位頁邏輯 + SEO 注入）
+├── spaces.html      # 版位詳細頁（版位卡片、即時報價、加入詢價）
+├── quotation.html   # 詢價送出頁（版位摘要確認 + 客戶資料表單 + 送出至 Sheets）
+├── site.js          # 主程式（輪播 + 郵局列表 + 版位頁邏輯 + 詢價流程 + SEO 注入）
 ├── spaces.js        # 舊版版位渲染（已廢棄，勿使用）
 ├── Code.gs          # ⚠️ Apps Script 本地參考副本（勿直接執行，需貼至雲端）
 ├── style.css        # 全站樣式（含列印、版位卡片、報價單）
@@ -78,8 +79,14 @@ postwallad/
 範例：A020 × 1個月 = 15,000×1 + 15,000 + 5,000 + 7,500 = **87,500**
 範例：A020 × 2個月 = 15,000×2 + 15,000 + 5,000 + 7,500 = **102,500**
 
-### bookings（訂單）
-`booking_id, space_id, 客戶, 開始日期, 結束日期, 月數, 成本, 總金額, 狀態（進行中／已結束）`
+### bookings（每個版位一行）
+`booking_id, space_id, 刊登月份, 報價金額`
+
+- 一筆訂單可有多行（每個版位各一行，共享同一 `booking_id`）
+- `booking_id` 格式：`BK-YYYYMMDD-XXXX`（日期 + 4碼隨機大寫英數字）
+
+### customers（客戶資料，每筆訂單一行）
+`booking_id, 公司名稱, 統一編號, 聯絡人姓名, 聯絡電話, 電子信箱, 公司地址, 總金額, 建立時間`
 
 ### Carousel-titile（輪播）
 `Slogan, 行動號召, 封面圖網址, File ID, File ID圖片網址`
@@ -87,12 +94,30 @@ postwallad/
 ---
 
 ## API 端點（Code.gs doGet）
-- `?action=carousel`   → 輪播圖資料（工作表：`Carousel-titile`）
-- `?action=locations`  → 郵局列表（工作表：`locations`）
-- `?action=spaces`     → 版位列表（工作表：`ad_spaces`）
-- `?action=bookings`   → 訂單資料（工作表：`bookings`）
-- `?action=seo`        → 各頁面 SEO meta（工作表：`SEO`）
+- `?action=carousel`      → 輪播圖資料（工作表：`Carousel-titile`）
+- `?action=locations`     → 郵局列表（工作表：`locations`）
+- `?action=spaces`        → 版位列表（工作表：`ad_spaces`）
+- `?action=bookings`      → 訂單資料（工作表：`bookings`）
+- `?action=seo`           → 各頁面 SEO meta（工作表：`SEO`）
+- `?action=submitBooking` → 送出詢價（寫入 `customers` + `bookings`，需帶完整客戶欄位與 `items` JSON）
 - 所有請求須帶 `&callback=函式名稱`（JSONP）
+
+### submitBooking 參數
+| 參數 | 說明 |
+|------|------|
+| `companyName` | 公司名稱 |
+| `taxId` | 統一編號（可空） |
+| `contactName` | 聯絡人姓名 |
+| `phone` | 聯絡電話 |
+| `email` | 電子信箱 |
+| `address` | 公司地址（可空） |
+| `totalAmount` | 總金額 |
+| `items` | JSON 陣列，每項 `{space_id, months, price}` |
+
+### Apps Script 部署注意事項
+- 每次「建立新部署」會產生**全新 URL**，舊 URL 仍指向舊版本
+- 若要更新現有 URL：選「管理部署 → 編輯 → 選新版本」，URL 不變
+- `site.js` 第 1 行 `apiUrl` 必須與目前活躍部署的 URL 一致
 
 ---
 
@@ -101,10 +126,17 @@ postwallad/
 ### ✅ 已完成
 - 首頁（index.html）：輪播圖、特色介紹、服務區域、三步驟、SEO / JSON-LD
 - 郵局列表（locations.html）：JSONP 載入、縣市/行政區篩選、搜尋、「只顯示有可用版位」checkbox、卡片展示、可用版位數 badge
-- 後端 API（Code.gs）：所有 action 路由正常
-- 版位詳細頁（spaces.html）：郵局資訊 + Google Maps 嵌入、版位卡片列表、月份輸入即時報價、加入詢價/取消 toggle、詢價 Modal（含刪除單項）、圖片點擊放大
+- 後端 API（Code.gs）：所有 action 路由正常，含 submitBooking
+- 版位詳細頁（spaces.html）：郵局資訊 + Google Maps 嵌入、版位卡片列表、月份輸入即時報價、加入詢價/取消 toggle、詢價 Modal（含跨局所版位、刪除單項、「索取報價單」單按鈕）、圖片點擊放大
+- 詢價送出頁（quotation.html）：版位摘要確認（含局所名稱欄）、客戶資料表單、JSONP 送出至 Sheets（customers + bookings），成功顯示 booking_id
+- Google Sheets 雙表架構：customers（每筆訂單一行）+ bookings（每個版位一行）
+- **跨局所購物車**：sessionStorage 持久化（`pw_inquiry_cart`），跨郵局保留版位選擇；切換局所後進入 spaces.html 自動恢復按鈕狀態
+- **導覽列 badge**：全站 4 頁導覽列顯示「選擇版位報價」連結，紅底黃字跳動數字（`cartBounce` CSS 動畫），無版位時自動隱藏
 - Icon 系統：全站從 Bootstrap Icons 遷移至 Font Awesome 6（`fa-solid fa-*` 格式，cdnjs CDN）
 - SEO 動態注入：`site.js` 頁面載入時呼叫 `?action=seo`，依頁面檔名匹配 SEO 工作表並更新 title / meta / og 標籤
+
+### 🔲 待開發
+（目前無已知待開發項目）
 
 ### ⚠️ 待確認
 - ad_spaces 欄 I、O、Q、S 的確切欄位名稱（現用 `includes()` 模糊比對）
@@ -132,6 +164,16 @@ calcSpaceTotal(space, months)
 
 // 數值解析（處理 NT$ 格式字串或純數字）
 parseNum(val)  // 去除非數字字元後 parseFloat
+
+// 詢價購物車（sessionStorage 跨頁面）
+const CART_KEY = 'pw_inquiry_cart';
+// cart 結構：Array of { space_id, location_id, spaceName, locationName, months, price }
+
+// 前往詢價頁（保存 cart 至 sessionStorage 後跳轉）
+goToQuotation()  // 定義在 initSpaces IIFE 內，掛至 window.goToQuotation
+
+// 詢價頁邏輯（quotation.html 專屬 IIFE）
+initQuotation()  // 讀取 sessionStorage cart，渲染摘要，處理表單送出
 ```
 
 ---

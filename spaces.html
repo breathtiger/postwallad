@@ -73,6 +73,13 @@
           <li class="nav-item"><a class="nav-link" href="index.html">首頁</a></li>
           <li class="nav-item"><a class="nav-link" href="locations.html">局所列表</a></li>
           <li class="nav-item"><a class="nav-link" href="#contact">聯絡我們</a></li>
+          <li class="nav-item">
+            <a class="nav-link d-none fw-semibold" href="quotation.html" id="navCartLink">
+              選擇版位報價
+              <span class="badge rounded-pill ms-1" id="navCartBadge"
+                    style="background:#dc3545;color:#ffd700">0</span>
+            </a>
+          </li>
         </ul>
       </div>
     </div>
@@ -139,16 +146,10 @@
         </div>
         <div class="modal-body p-0" id="inquiryModalBody"></div>
         <div class="modal-footer d-flex justify-content-between align-items-center flex-wrap gap-2">
-          <div class="text-muted small">如需進一步確認，歡迎聯繫我們</div>
-          <div class="d-flex gap-2">
-            <a href="https://lin.ee/Rtr3Tlq4" target="_blank" rel="noopener"
-               class="btn btn-success btn-sm">
-              <i class="fa-solid fa-comment-dots me-1"></i>LINE 詢問
-            </a>
-            <a href="mailto:service@breathtiger.com" class="btn btn-outline-secondary btn-sm">
-              <i class="fa-solid fa-envelope me-1"></i>Email
-            </a>
-          </div>
+          <div class="text-muted small">填寫資料後我們將盡速與您聯繫</div>
+          <button class="btn btn-danger fw-bold px-4" onclick="goToQuotation()">
+            <i class="fa-solid fa-file-invoice-dollar me-2"></i>索取報價單
+          </button>
         </div>
       </div>
     </div>

@@ -1,4 +1,24 @@
-const apiUrl = "https://script.google.com/macros/s/AKfycbwiAeNHdYL2GfI0BcOhOt6iBbkitpQAycK7rhVI5svRVTNKQjfzs4-1vrki-q2fdMklRA/exec";
+const apiUrl = "https://script.google.com/macros/s/AKfycbxsWqFfnQmQ5msIK97WzTJid8MaDaZQwKVJNNfzZoKazkkgzq9I9H0peLXrMnZ397E7MQ/exec";
+
+// ════════════════════════════════
+// 全域購物車（sessionStorage 跨頁面持久化）
+// 結構：[{space_id, location_id, locationName, months, total, w, h, monthlyRent, fixedCost}]
+// ════════════════════════════════
+const CART_KEY = 'pw_inquiry_cart';
+function cartLoad() {
+  try { return JSON.parse(sessionStorage.getItem(CART_KEY)) || []; } catch (_) { return []; }
+}
+function cartSave(c) {
+  try { sessionStorage.setItem(CART_KEY, JSON.stringify(c)); } catch (_) {}
+}
+function updateNavBadge() {
+  const count = cartLoad().length;
+  const link  = document.getElementById('navCartLink');
+  const badge = document.getElementById('navCartBadge');
+  if (!link || !badge) return;
+  badge.textContent = count;
+  link.classList.toggle('d-none', count === 0);
+}
 
 // ════════════════════════════════
 // SEO 動態注入（從 Google Sheets SEO 工作表）
@@ -6,7 +26,7 @@ const apiUrl = "https://script.google.com/macros/s/AKfycbwiAeNHdYL2GfI0BcOhOt6iB
 (function initSeo() {
   const page = location.pathname.split('/').pop() || 'index.html';
   jsonp('seo', function(rows) {
-    if (!rows || rows.length === 0) return;
+    if (!rows || !Array.isArray(rows) || rows.length === 0) return;
     const row = rows.find(r => (r['頁面'] || '').trim() === page);
     if (!row) return;
 
@@ -172,16 +192,12 @@ function buildCarousel(slides) {
   let locData = null, spaceData = null;
 
   jsonp('locations', function(data) {
-    console.log('locations 收到', data ? data.length : 0, '筆');
     locData = data;
-    // locations 一到就先渲染，不等 spaces
     renderLocations(locData, spaceData || []);
   });
 
   jsonp('spaces', function(data) {
-    console.log('spaces 收到', data ? data.length : 0, '筆');
     spaceData = data;
-    // spaces 到了再重新渲染（更新可用版位數）
     if (locData !== null) renderLocations(locData, spaceData);
   });
 })();
@@ -343,7 +359,6 @@ function isAvailable(space) {
   let _spaces    = [];
   let _locLoaded = false;
   let _spcLoaded = false;
-  const _cart    = []; // [{idx, space, months, total}]
 
   jsonp('locations', function(data) {
     _location  = (data || []).find(l => l['location_id'] === locationId) || null;
@@ -366,12 +381,13 @@ function isAvailable(space) {
     }
     renderLocationHeader();
     renderSpacesList();
+    restoreCartState();
+    updateInquiryBar();
+    updateNavBadge();
   }
 
   function renderLocationHeader() {
-    const loc      = _location;
-
-    // 動態更新 JSON-LD 麵包屑：補入局所名稱
+    const loc = _location;
     const ldEl = document.getElementById('jsonLd');
     if (ldEl) {
       try {
@@ -503,22 +519,55 @@ function isAvailable(space) {
   }
 
   function calcSpaceTotal(space, months) {
-    const keys = Object.keys(space);
-    // I欄：出租報價/月（唯一乘月數）
-    const rentKey   = keys.find(k => k.includes('出租報價') && k.includes('月'));
-    // O欄：印刷輸出報價（固定）
-    const printKey  = keys.find(k => k.includes('印刷輸出報價'));
-    // Q欄：吊車費用（固定）
-    const feeKey    = keys.find(k => k.includes('吊車費'));
-    // S欄：施工報價（固定）
-    const priceKey  = keys.find(k => k.includes('施工報價'));
-
-    const rent    = rentKey   ? parseNum(space[rentKey])   : 0;
-    const print   = printKey  ? parseNum(space[printKey])  : 0;
-    const fee     = feeKey    ? parseNum(space[feeKey])    : 0;
-    const price   = priceKey  ? parseNum(space[priceKey])  : 0;
-
+    const keys     = Object.keys(space);
+    const rentKey  = keys.find(k => k.includes('出租報價') && k.includes('月'));
+    const printKey = keys.find(k => k.includes('印刷輸出報價'));
+    const feeKey   = keys.find(k => k.includes('吊車費'));
+    const priceKey = keys.find(k => k.includes('施工報價'));
+    const rent     = rentKey  ? parseNum(space[rentKey])  : 0;
+    const print    = printKey ? parseNum(space[printKey]) : 0;
+    const fee      = feeKey   ? parseNum(space[feeKey])   : 0;
+    const price    = priceKey ? parseNum(space[priceKey]) : 0;
     return rent * months + print + fee + price;
+  }
+
+  function getMonthlyRent(space) {
+    const keys    = Object.keys(space);
+    const rentKey = keys.find(k => k.includes('出租報價') && k.includes('月'));
+    return rentKey ? parseNum(space[rentKey]) : 0;
+  }
+
+  // 進入頁面時，依 sessionStorage 恢復已選版位的按鈕狀態
+  function restoreCartState() {
+    const globalCart = cartLoad();
+    _spaces.forEach((space, idx) => {
+      const item = globalCart.find(c => c.space_id === space['space_id'] && c.location_id === locationId);
+      if (!item) return;
+      const btn = document.getElementById(`cartBtn_${idx}`);
+      if (btn) {
+        btn.innerHTML = '<i class="fa-solid fa-circle-check me-1"></i>已加入詢價';
+        btn.classList.replace('btn-danger', 'btn-success');
+      }
+      const monthsInput = document.getElementById(`months_${idx}`);
+      if (monthsInput) monthsInput.value = item.months;
+      const priceEl = document.getElementById(`price_${idx}`);
+      if (priceEl) priceEl.textContent = `NT$ ${formatPrice(item.total)}`;
+    });
+  }
+
+  function updateInquiryBar() {
+    const count   = cartLoad().length;
+    const countEl = document.getElementById('inquiryCount');
+    if (countEl) countEl.textContent = count;
+    const bar = document.getElementById('inquiryBar');
+    if (!bar) return;
+    if (count > 0) {
+      bar.classList.remove('d-none');
+      document.body.style.paddingBottom = '52px';
+    } else {
+      bar.classList.add('d-none');
+      document.body.style.paddingBottom = '';
+    }
   }
 
   window.updateSpacePrice = function(idx) {
@@ -527,141 +576,159 @@ function isAvailable(space) {
   };
 
   window.addToInquiry = function(idx) {
-    const btn      = document.getElementById(`cartBtn_${idx}`);
-    const existing = _cart.findIndex(c => c.idx === idx);
+    const btn        = document.getElementById(`cartBtn_${idx}`);
+    const space      = _spaces[idx];
+    const sid        = space['space_id'] || '';
+    const globalCart = cartLoad();
+    const existingPos = globalCart.findIndex(c => c.space_id === sid && c.location_id === locationId);
 
-    if (existing >= 0) {
-      // 已在清單 → 移除（toggle off）
-      _cart.splice(existing, 1);
+    if (existingPos >= 0) {
+      globalCart.splice(existingPos, 1);
+      cartSave(globalCart);
       btn.innerHTML = '<i class="fa-solid fa-circle-plus me-1"></i>加入詢價';
       btn.classList.replace('btn-success', 'btn-danger');
     } else {
-      // 加入清單
-      const months = Math.max(1, parseInt(document.getElementById(`months_${idx}`).value) || 1);
-      const space  = _spaces[idx];
-      const total  = calcSpaceTotal(space, months);
-      _cart.push({ idx, space, months, total });
+      const months      = Math.max(1, parseInt(document.getElementById(`months_${idx}`).value) || 1);
+      const monthlyRent = getMonthlyRent(space);
+      const total       = calcSpaceTotal(space, months);
+      globalCart.push({
+        space_id:     sid,
+        location_id:  locationId,
+        locationName: _location ? (_location['局名'] || '') : '',
+        months,
+        total,
+        w: String(space['寬cm.'] || '-'),
+        h: String(space['高cm']  || '-'),
+        monthlyRent,
+        fixedCost: total - monthlyRent * months
+      });
+      cartSave(globalCart);
       btn.innerHTML = '<i class="fa-solid fa-circle-check me-1"></i>已加入詢價';
       btn.classList.replace('btn-danger', 'btn-success');
     }
 
-    document.getElementById('inquiryCount').textContent = _cart.length;
-    if (_cart.length > 0) {
-      document.getElementById('inquiryBar').classList.remove('d-none');
-      document.body.style.paddingBottom = '52px';
-    } else {
-      document.getElementById('inquiryBar').classList.add('d-none');
-      document.body.style.paddingBottom = '';
-    }
+    updateInquiryBar();
+    updateNavBadge();
   };
 
   function refreshInquiryModal() {
-    const locName = _location ? escHtml(_location['局名'] || '') : '';
-    let grandTotal = 0;
+    const globalCart = cartLoad();
 
-    const rows = _cart.map(c => {
-      grandTotal += c.total;
-      const w = escHtml(String(c.space['寬cm.'] || '-'));
-      const h = escHtml(String(c.space['高cm']  || '-'));
+    if (globalCart.length === 0) {
+      document.getElementById('inquiryModalBody').innerHTML =
+        `<div class="text-center text-muted py-4 small">詢價清單已清空</div>`;
+      return;
+    }
+
+    let grandTotal = 0;
+    const rows = globalCart.map((item, i) => {
+      grandTotal += item.total;
       return `
-        <tr id="modalRow_${c.idx}">
-          <td>${escHtml(c.space['space_id'] || '')}</td>
-          <td>${w} × ${h} cm</td>
+        <tr>
+          <td class="small">${escHtml(item.locationName)}</td>
+          <td>${escHtml(item.space_id)}</td>
+          <td>${escHtml(item.w)} × ${escHtml(item.h)} cm</td>
           <td class="text-center">
-            <input type="number" min="1" value="${c.months}"
+            <input type="number" min="1" value="${item.months}"
                    class="form-control form-control-sm text-center d-inline-block"
                    style="width:68px"
-                   oninput="updateModalMonths(${c.idx}, this.value)">
+                   oninput="updateModalMonths(${i}, this.value)">
           </td>
-          <td class="text-end fw-bold text-danger" id="modalPrice_${c.idx}">NT$ ${formatPrice(c.total)}</td>
+          <td class="text-end fw-bold text-danger" id="modalPrice_${i}">NT$ ${formatPrice(item.total)}</td>
           <td class="text-center">
-            <button class="btn btn-outline-danger btn-sm py-0 px-1" style="font-size:11px"
-                    onclick="removeFromInquiry(${c.idx})">
+            <button class="btn btn-outline-danger btn-sm py-0 px-1"
+                    onclick="removeFromInquiry(${i})">
               <i class="fa-solid fa-trash"></i>
             </button>
           </td>
         </tr>`;
     }).join('');
 
-    const empty = _cart.length === 0;
-    document.getElementById('inquiryModalBody').innerHTML = empty
-      ? `<div class="text-center text-muted py-4 small">詢價清單已清空</div>`
-      : `<div class="p-3">
-          <p class="text-muted small mb-3">
-            <i class="fa-solid fa-building me-1"></i>${locName}
-          </p>
-          <table class="table table-sm table-bordered mb-2 quote-info-table">
-            <thead class="table-light">
-              <tr>
-                <th>版位編號</th><th>尺寸</th>
-                <th class="text-center">刊登月份</th>
-                <th class="text-end">總報價</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>${rows}</tbody>
-            <tfoot>
-              <tr class="table-light fw-bold">
-                <td colspan="4">合計</td>
-                <td class="text-end text-danger" id="modalGrandTotal">NT$ ${formatPrice(grandTotal)}</td>
-              </tr>
-            </tfoot>
-          </table>
-          <p class="text-muted mb-0" style="font-size:11px">
-            ※ 以上報價為出租價格乘以刊登月數，實際金額以簽約確認為準。
-          </p>
-        </div>`;
+    document.getElementById('inquiryModalBody').innerHTML = `
+      <div class="p-3">
+        <table class="table table-sm table-bordered mb-2 quote-info-table">
+          <thead class="table-light">
+            <tr>
+              <th>局所</th><th>版位編號</th><th>尺寸</th>
+              <th class="text-center">刊登月份</th>
+              <th class="text-end">總報價</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+          <tfoot>
+            <tr class="table-light fw-bold">
+              <td colspan="4">合計</td>
+              <td class="text-end text-danger" id="modalGrandTotal">NT$ ${formatPrice(grandTotal)}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+        <p class="text-muted mb-0" style="font-size:11px">
+          ※ 以上報價為出租價格乘以刊登月數，實際金額以簽約確認為準。
+        </p>
+      </div>`;
   }
 
-  window.updateModalMonths = function(idx, val) {
-    const months = Math.max(1, parseInt(val) || 1);
-    const pos = _cart.findIndex(c => c.idx === idx);
-    if (pos < 0) return;
-    _cart[pos].months = months;
-    _cart[pos].total  = calcSpaceTotal(_cart[pos].space, months);
+  window.updateModalMonths = function(i, val) {
+    const months     = Math.max(1, parseInt(val) || 1);
+    const globalCart = cartLoad();
+    if (i >= globalCart.length) return;
+    const item  = globalCart[i];
+    item.months = months;
+    item.total  = item.monthlyRent * months + item.fixedCost;
+    cartSave(globalCart);
 
-    // 更新 modal 該列價格
-    const priceEl = document.getElementById(`modalPrice_${idx}`);
-    if (priceEl) priceEl.textContent = `NT$ ${formatPrice(_cart[pos].total)}`;
+    const priceEl = document.getElementById(`modalPrice_${i}`);
+    if (priceEl) priceEl.textContent = `NT$ ${formatPrice(item.total)}`;
 
-    // 更新合計
-    const grand = _cart.reduce((s, c) => s + c.total, 0);
+    const grand  = globalCart.reduce((s, c) => s + c.total, 0);
     const footEl = document.getElementById('modalGrandTotal');
     if (footEl) footEl.textContent = `NT$ ${formatPrice(grand)}`;
 
-    // 同步卡片月份 input
-    const cardInput = document.getElementById(`months_${idx}`);
-    if (cardInput) cardInput.value = months;
-    // 同步卡片顯示價格
-    const cardPrice = document.getElementById(`price_${idx}`);
-    if (cardPrice) cardPrice.textContent = `NT$ ${formatPrice(_cart[pos].total)}`;
+    if (item.location_id === locationId) {
+      const spaceIdx = _spaces.findIndex(s => s['space_id'] === item.space_id);
+      if (spaceIdx >= 0) {
+        const cardInput = document.getElementById(`months_${spaceIdx}`);
+        if (cardInput) cardInput.value = months;
+        const cardPrice = document.getElementById(`price_${spaceIdx}`);
+        if (cardPrice) cardPrice.textContent = `NT$ ${formatPrice(item.total)}`;
+      }
+    }
   };
 
-  window.removeFromInquiry = function(idx) {
-    const pos = _cart.findIndex(c => c.idx === idx);
-    if (pos < 0) return;
-    _cart.splice(pos, 1);
+  window.removeFromInquiry = function(i) {
+    const globalCart = cartLoad();
+    if (i >= globalCart.length) return;
+    const item = globalCart[i];
 
-    // 同步卡片按鈕
-    const btn = document.getElementById(`cartBtn_${idx}`);
-    if (btn) {
-      btn.innerHTML = '<i class="fa-solid fa-circle-plus me-1"></i>加入詢價';
-      btn.classList.replace('btn-success', 'btn-danger');
+    if (item.location_id === locationId) {
+      const spaceIdx = _spaces.findIndex(s => s['space_id'] === item.space_id);
+      if (spaceIdx >= 0) {
+        const btn = document.getElementById(`cartBtn_${spaceIdx}`);
+        if (btn) {
+          btn.innerHTML = '<i class="fa-solid fa-circle-plus me-1"></i>加入詢價';
+          btn.classList.replace('btn-success', 'btn-danger');
+        }
+      }
     }
 
-    document.getElementById('inquiryCount').textContent = _cart.length;
-    if (_cart.length === 0) {
-      document.getElementById('inquiryBar').classList.add('d-none');
-      document.body.style.paddingBottom = '';
-    }
-
+    globalCart.splice(i, 1);
+    cartSave(globalCart);
+    updateInquiryBar();
+    updateNavBadge();
     refreshInquiryModal();
   };
 
   window.showInquiryModal = function() {
-    if (_cart.length === 0) return;
+    if (cartLoad().length === 0) return;
     refreshInquiryModal();
     new bootstrap.Modal(document.getElementById('inquiryModal')).show();
+  };
+
+  window.goToQuotation = function() {
+    if (cartLoad().length === 0) return;
+    window.location.href = 'quotation.html';
   };
 
 })();
@@ -690,6 +757,121 @@ function showSpacesError(msg) {
   el.classList.remove('d-none');
 }
 
+// ════════════════════════════════
+// quotation.html：詢價確認頁
+// ════════════════════════════════
+(function initQuotation() {
+  if (!document.getElementById('quotationPage')) return;
+
+  const loadingEl = document.getElementById('quotationLoading');
+  const errorEl   = document.getElementById('quotationError');
+  const contentEl = document.getElementById('quotationContent');
+  const successEl = document.getElementById('quotationSuccess');
+
+  const cartItems  = cartLoad();
+  const grandTotal = cartItems.reduce((s, c) => s + c.total, 0);
+
+  loadingEl.classList.add('d-none');
+
+  if (!cartItems || cartItems.length === 0) {
+    errorEl.classList.remove('d-none');
+    return;
+  }
+
+  contentEl.classList.remove('d-none');
+
+  const rows = cartItems.map(item => `
+    <tr>
+      <td class="small">${escHtml(item.locationName)}</td>
+      <td>${escHtml(item.space_id)}</td>
+      <td>${escHtml(String(item.w || '-'))} × ${escHtml(String(item.h || '-'))} cm</td>
+      <td class="text-center">${item.months} 個月</td>
+      <td class="text-end fw-bold text-danger">NT$ ${formatPrice(item.total)}</td>
+    </tr>`).join('');
+
+  document.getElementById('quoteSummary').innerHTML = `
+    <table class="table table-sm table-bordered mb-2 quote-info-table">
+      <thead class="table-light">
+        <tr>
+          <th>局所</th><th>版位編號</th><th>尺寸</th>
+          <th class="text-center">刊登月份</th>
+          <th class="text-end">報價</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+      <tfoot>
+        <tr class="table-light fw-bold">
+          <td colspan="4">合計</td>
+          <td class="text-end text-danger">NT$ ${formatPrice(grandTotal)}</td>
+        </tr>
+      </tfoot>
+    </table>
+    <p class="text-muted mb-0" style="font-size:11px">
+      ※ 以上報價為出租價格乘以刊登月數，實際金額以簽約確認為準。
+    </p>`;
+
+  document.getElementById('quotationForm').addEventListener('submit', function(ev) {
+    ev.preventDefault();
+    if (!this.checkValidity()) { this.classList.add('was-validated'); return; }
+
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>送出中…';
+    document.getElementById('formError').classList.add('d-none');
+
+    const callbackName = '_cb_booking_' + Date.now();
+    const script = document.createElement('script');
+    const timer = setTimeout(() => { cleanup(); onError('連線逾時，請稍後再試'); }, 15000);
+
+    function cleanup() {
+      clearTimeout(timer);
+      window[callbackName] = null;
+      script.remove();
+    }
+
+    window[callbackName] = function(result) {
+      cleanup();
+      result && result.success ? onSuccess(result.bookingId) : onError(result && result.error);
+    };
+    script.onerror = function() { cleanup(); onError('網路錯誤，請稍後再試'); };
+
+    const params = new URLSearchParams({
+      action:      'submitBooking',
+      callback:    callbackName,
+      companyName: document.getElementById('qCompanyName').value.trim(),
+      taxId:       document.getElementById('qTaxId').value.trim(),
+      contactName: document.getElementById('qContactName').value.trim(),
+      phone:       document.getElementById('qPhone').value.trim(),
+      email:       document.getElementById('qEmail').value.trim(),
+      address:     document.getElementById('qAddress').value.trim(),
+      totalAmount: String(grandTotal),
+      items:       JSON.stringify(cartItems.map(i => ({
+                     space_id: i.space_id, months: i.months, price: i.total
+                   })))
+    });
+
+    script.src = apiUrl + '?' + params.toString();
+    document.body.appendChild(script);
+  });
+
+  function onSuccess(bookingId) {
+    contentEl.classList.add('d-none');
+    successEl.classList.remove('d-none');
+    if (bookingId) document.getElementById('bookingIdDisplay').textContent = bookingId;
+    cartSave([]);
+    updateNavBadge();
+  }
+
+  function onError(msg) {
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-paper-plane me-2"></i>送出詢價';
+    const el = document.getElementById('formError');
+    el.textContent = msg || '送出失敗，請稍後再試';
+    el.classList.remove('d-none');
+  }
+})();
+
 function validUrl(val) {
   if (!val) return '';
   const s = String(val).trim();
@@ -704,3 +886,6 @@ function validUrl(val) {
   // lh3.googleusercontent.com/d/XXX 直接可用
   return s;
 }
+
+// 初始化 badge（頁面載入即讀 sessionStorage，讓所有頁面都顯示正確數字）
+updateNavBadge();
