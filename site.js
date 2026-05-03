@@ -1,4 +1,4 @@
-const apiUrl = "https://script.google.com/macros/s/AKfycbyfTT1RUMcIZGYlqSYte0CPrAq3cvWG58w2C64g8VmVoFsqQC8sA-fp9eKThIRxEETTkg/exec";
+const apiUrl = "https://script.google.com/macros/s/AKfycbzgS6gthPt8lLufm-HbYR9tLQdCmLqJnAdPAQBQzCilAUec5PIMtfWMb0fYIHtVjs9-RA/exec";
 
 // ════════════════════════════════
 // 全域購物車（sessionStorage 跨頁面持久化）
