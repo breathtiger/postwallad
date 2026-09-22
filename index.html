@@ -166,14 +166,16 @@
        ════════════════════════════════ -->
   <section aria-label="廣告版位宣傳輪播" id="heroSection">
 
-    <!-- 載入中佔位 -->
-    <div id="carouselLoading" class="carousel-loading d-flex align-items-center justify-content-center bg-dark"
+    <!-- 靜態首屏：不等待 Apps Script 或雲端圖片，慢速網路下仍可立即瀏覽 -->
+    <div id="carouselLoading" class="hero-fallback d-flex align-items-center justify-content-center"
          style="height:100svh">
-      <div class="text-center text-white-50">
-        <div class="spinner-border mb-3" role="status">
-          <span class="visually-hidden">載入中</span>
-        </div>
-        <p class="small mb-0">載入輪播圖中…</p>
+      <div class="container text-center text-white px-4">
+        <p class="text-uppercase small fw-semibold mb-3 hero-eyebrow">基隆・汐止・瑞芳</p>
+        <h1 class="display-4 fw-bold lh-sm mb-3">郵局牆面廣告版位</h1>
+        <p class="lead mb-4">精準觸及在地消費者，線上選位、即時計算報價。</p>
+        <a href="locations.html" class="btn btn-danger btn-lg px-5 fw-bold shadow">
+          <i class="fa-solid fa-magnifying-glass me-2" aria-hidden="true"></i>瀏覽可刊登版位
+        </a>
       </div>
     </div>
 

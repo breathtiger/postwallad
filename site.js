@@ -75,16 +75,17 @@ function escHtml(str) {
 }
 
 // JSONP 通用載入器（Apps Script 不支援 CORS，統一用 JSONP）
-function jsonp(action, callbackFn) {
+function jsonp(action, callbackFn, options = {}) {
   const callbackName = '_cb_' + action + '_' + Date.now();
   const script = document.createElement('script');
+  const timeoutMs = options.timeoutMs || 12000;
 
-  // 逾時保護：30 秒後自動觸發空資料
+  // 公開資料逾時後快速顯示錯誤／備用內容，避免訪客長時間卡在轉圈。
   const timer = setTimeout(() => {
     window[callbackName] = function() {};  // no-op 避免遲到回應 crash
     script.remove();
     callbackFn([]);
-  }, 30000);
+  }, timeoutMs);
 
   window[callbackName] = function(data) {
     clearTimeout(timer);
@@ -96,7 +97,7 @@ function jsonp(action, callbackFn) {
   script.src = `${apiUrl}?action=${action}&callback=${callbackName}`;
   script.onerror = function() {
     clearTimeout(timer);
-    window[callbackName] = null;
+    window[callbackName] = function() {}; // 避免延遲 JSONP 回應造成前端例外
     script.remove();
     callbackFn([]);
   };
@@ -107,7 +108,7 @@ function jsonp(action, callbackFn) {
 // 首頁：輪播圖
 // ════════════════════════════════
 if (document.getElementById('heroCarousel')) {
-  jsonp('carousel', buildCarousel);
+  jsonp('carousel', buildCarousel, { timeoutMs: 8000 });
 }
 
 function buildCarousel(slides) {
@@ -120,7 +121,12 @@ function buildCarousel(slides) {
   const valid = (val) => val && String(val).trim() !== '' && String(val).trim() !== '#N/A';
 
   if (Array.isArray(slides) && slides.length > 0) {
-    slides = slides.filter(s => valid(s.imageUrl) || valid(s.slogan));
+    // Sheet 使用中文欄名；同時支援舊的 imageUrl/slogan/cta 格式。
+    slides = slides.map(s => ({
+      imageUrl: s.imageUrl || s['File ID圖片網址'] || s['封面圖網址'] || '',
+      slogan:   s.slogan   || s.Slogan || '',
+      cta:      s.cta      || s['行動號召'] || ''
+    })).filter(s => valid(s.imageUrl) || valid(s.slogan));
   }
 
   // 備用投影片（直接用 Google Drive lh3 圖片網址）
@@ -158,10 +164,11 @@ function buildCarousel(slides) {
     const item = document.createElement('div');
     item.className = 'carousel-item' + (i === 0 ? ' active' : '');
     item.innerHTML = `
-      <img src="${escHtml(valid(slide.imageUrl) ? slide.imageUrl : 'banner_1.png')}"
+      <img src="${escHtml(validUrl(slide.imageUrl, 1920) || 'banner_1.png')}"
            class="d-block w-100 carousel-hero-img"
            alt="${escHtml(slide.slogan || '')}"
-           loading="${i === 0 ? 'eager' : 'lazy'}">
+           loading="${i === 0 ? 'eager' : 'lazy'}"
+           decoding="async"${i === 0 ? ' fetchpriority="high"' : ''}>
       <div class="carousel-caption carousel-hero-caption d-flex flex-column align-items-center justify-content-center">
         <h1 class="display-4 fw-bold lh-sm mb-3 carousel-hero-title">${escHtml(slide.slogan || '')}</h1>
         <a href="locations.html" class="btn btn-danger btn-lg px-5 fw-bold shadow" role="button">
@@ -171,15 +178,19 @@ function buildCarousel(slides) {
     inner.appendChild(item);
   });
 
-  loading.classList.add('d-none');
-  carouselEl.classList.remove('d-none');
-
-  // 動態加入投影片後，手動初始化 Bootstrap Carousel
-  new bootstrap.Carousel(carouselEl, {
-    interval: 5000,
-    ride: 'carousel',
-    wrap: true
-  });
+  // 在第一張實際圖片載入前保留可點擊的靜態首屏，避免慢速 Drive 圖片造成黑屏。
+  const revealCarousel = () => {
+    loading.classList.add('d-none');
+    carouselEl.classList.remove('d-none');
+    new bootstrap.Carousel(carouselEl, { interval: 5000, ride: 'carousel', wrap: true });
+  };
+  const firstImage = inner.querySelector('img');
+  if (firstImage && !firstImage.complete) {
+    firstImage.addEventListener('load', revealCarousel, { once: true });
+    firstImage.addEventListener('error', revealCarousel, { once: true });
+  } else {
+    revealCarousel();
+  }
 }
 
 // ════════════════════════════════
@@ -188,17 +199,9 @@ function buildCarousel(slides) {
 (function initLocations() {
   if (!document.getElementById('locationsGrid')) return;
 
-  // 同時撈 locations + spaces（用來計算可用版位數）
-  let locData = null, spaceData = null;
-
-  jsonp('locations', function(data) {
-    locData = data;
-    renderLocations(locData, spaceData || []);
-  });
-
-  jsonp('spaces', function(data) {
-    spaceData = data;
-    if (locData !== null) renderLocations(locData, spaceData);
+  // 一次取得局所與版位，避免兩次 Apps Script 冷啟動與重複渲染。
+  jsonp('catalog', function(data) {
+    renderLocations(data && data.locations, data && data.spaces);
   });
 })();
 
@@ -304,14 +307,15 @@ function renderGrid(locations) {
   empty.classList.add('d-none');
 
   grid.innerHTML = locations.map(loc => {
-    const imgUrl    = validUrl(loc['File ID圖片網址']) || validUrl(loc['封面圖網址']) || '';
+    const imgUrl    = validUrl(loc['File ID圖片網址'], 600) || validUrl(loc['封面圖網址'], 600) || '';
     const spaces    = _allSpaces.filter(s => s['location_id'] === loc['location_id']);
     const availCnt  = spaces.filter(s => isAvailable(s)).length;
 
     const spaceUrl = `spaces.html?id=${encodeURIComponent(loc['location_id'] || '')}`;
     const imgEl = imgUrl
       ? `<img src="${escHtml(imgUrl)}" class="card-img-top" alt="${escHtml(loc['局名'] || '')}"
-              style="height:200px;object-fit:cover${availCnt > 0 ? ';cursor:pointer' : ''}" loading="lazy">`
+              style="height:200px;object-fit:cover${availCnt > 0 ? ';cursor:pointer' : ''}"
+              width="600" height="338" loading="lazy" decoding="async">`
       : `<div class="bg-light d-flex align-items-center justify-content-center text-muted"
               style="height:200px"><i class="fa-solid fa-building fs-1"></i></div>`;
     return `
@@ -357,23 +361,16 @@ function isAvailable(space) {
 
   let _location  = null;
   let _spaces    = [];
-  let _locLoaded = false;
-  let _spcLoaded = false;
 
-  jsonp('locations', function(data) {
-    _location  = (Array.isArray(data) ? data : []).find(l => l['location_id'] === locationId) || null;
-    _locLoaded = true;
-    tryRender();
-  });
-
-  jsonp('spaces', function(data) {
-    _spaces    = (Array.isArray(data) ? data : []).filter(s => s['location_id'] === locationId && isAvailable(s));
-    _spcLoaded = true;
+  jsonp('catalog', function(data) {
+    const locations = Array.isArray(data && data.locations) ? data.locations : [];
+    const spaces = Array.isArray(data && data.spaces) ? data.spaces : [];
+    _location = locations.find(l => l['location_id'] === locationId) || null;
+    _spaces = spaces.filter(s => s['location_id'] === locationId && isAvailable(s));
     tryRender();
   });
 
   function tryRender() {
-    if (!_locLoaded || !_spcLoaded) return;
     document.getElementById('spacesLoading').classList.add('d-none');
     if (!_location) {
       showSpacesError('找不到此局所資料，請返回<a href="locations.html" class="alert-link">局所列表</a>。');
@@ -459,7 +456,7 @@ function isAvailable(space) {
       const sid    = escHtml(space['space_id'] || `版位 ${idx + 1}`);
       const w      = escHtml(String(space['寬cm.'] || '-'));
       const h      = escHtml(String(space['高cm']  || '-'));
-      const imgUrl = validUrl(space['File ID圖片網址']);
+      const imgUrl = validUrl(space['File ID圖片網址'], 400);
       const price0 = calcSpaceTotal(space, 1);
       const feeNote = hasCraneFee(space)
         ? '廣告媒體+印刷輸出＋施工與復原+<span class="text-danger">吊車</span>等費用'
@@ -473,6 +470,7 @@ function isAvailable(space) {
               <div class="col-4 col-sm-3 col-md-2">
                 <img src="${escHtml(imgUrl)}" alt="${sid}"
                      class="rounded w-100" style="height:90px;object-fit:cover;cursor:zoom-in"
+                     width="160" height="90" loading="lazy" decoding="async"
                      onclick="openImgModal('${escHtml(imgUrl)}','${sid}')">
               </div>` : ''}
               <div class="col col-sm col-md">
@@ -821,11 +819,18 @@ function showSpacesError(msg) {
 
     const callbackName = '_cb_booking_' + Date.now();
     const script = document.createElement('script');
-    const timer = setTimeout(() => { cleanup(); onError('連線逾時，請稍後再試'); }, 30000);
+    // 此請求會生成 PDF、寫入 Drive 並寄信，允許較長時間但清楚告知訪客目前進度。
+    const timer = setTimeout(() => { cleanup(); onError('製作報價單逾時，請稍後再試'); }, 60000);
+    const progressTimer = setTimeout(() => {
+      if (btn.disabled) {
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>正在製作報價單，請稍候…';
+      }
+    }, 6000);
 
     function cleanup() {
       clearTimeout(timer);
-      window[callbackName] = null;
+      clearTimeout(progressTimer);
+      window[callbackName] = function() {}; // 避免延遲 JSONP 回應造成前端例外
       script.remove();
     }
 
@@ -881,15 +886,15 @@ function showSpacesError(msg) {
   }
 })();
 
-function validUrl(val) {
+function validUrl(val, width = 800) {
   if (!val) return '';
   const s = String(val).trim();
   if (s === '' || s === '#N/A' || s === 'N/A' || !s.startsWith('http')) return '';
 
-  // drive.google.com/uc?id=XXX 需登入，轉成 thumbnail 格式
-  const ucMatch = s.match(/[?&]id=([\w-]+)/);
-  if (ucMatch) {
-    return `https://drive.google.com/thumbnail?id=${ucMatch[1]}&sz=w400`;
+  // Google Drive 原圖或預覽頁會慢、也可能導向登入；統一轉為縮圖服務。
+  const idMatch = s.match(/[?&]id=([\w-]+)/) || s.match(/\/d\/([\w-]+)/);
+  if (idMatch && /drive\.google\.com/.test(s)) {
+    return `https://drive.google.com/thumbnail?id=${idMatch[1]}&sz=w${Math.min(Math.max(width, 200), 1920)}`;
   }
 
   // lh3.googleusercontent.com/d/XXX 直接可用

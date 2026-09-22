@@ -54,11 +54,18 @@
 | `carousel` | `Carousel-titile` | 首頁輪播圖資料 |
 | `locations` | `locations` | 郵局列表 |
 | `spaces` | `ad_spaces` | 廣告版位 |
+| `catalog` | `locations` + `ad_spaces` | 局所與版位合併資料（前台使用） |
 | `bookings` | `bookings` | 訂單資料 |
 | `seo` | `SEO` | 各頁面 SEO meta 資料 |
 | `submitBooking` | `customers` + `bookings` | 送出詢價，寫入客戶資料與版位訂單（回傳 `{success, bookingId}`） |
 
 所有請求須帶 `&callback=函式名稱`（JSONP 格式）。
+
+> 公開資料 API 使用 Google Apps Script 快取，Google Sheets 更新後最多約 5 分鐘才會反映到網站；此設計可減少 Apps Script 冷啟動造成的長時間讀取畫面。
+
+### 詢價寄信
+
+當報價單 PDF 成功產生後，系統會寄送客戶一封附有 PDF 的報價單，並另寄一封內部通知到 `service@breathtiger.com` 與 `drake@breathtiger.com`。內部通知包含客戶聯絡資料、版位明細、詢價合計與 PDF 附件。
 
 > ⚠️ 每次「建立新部署」會產生全新 URL。若要更新現有 URL，請選「管理部署 → 編輯 → 選新版本」，`site.js` 第 1 行 `apiUrl` 須與目前活躍部署一致。
 

@@ -10,9 +10,15 @@
 //   - 存取對象：所有人（匿名，不需登入）
 //
 // Script Properties（在 Apps Script 專案設定中填入，勿 commit 實際值）：
-//   SPREADSHEET_ID     — 主資料庫 Google Sheets ID
-//   QUOTE_TEMPLATE_ID  — 報價單範本 Sheets 檔案 ID
-//   QUOTE_FOLDER_ID    — 產生的 PDF 存放 Drive 資料夾 ID
+//   SPREADSHEET_ID          — 主資料庫 Google Sheets ID
+//   QUOTE_TEMPLATE_ID       — 報價單範本 Sheets 檔案 ID
+//   QUOTE_FOLDER_ID         — 產生的 PDF 存放 Drive 資料夾 ID
+//   LINE_CHANNEL_ACCESS_TOKEN — LINE 官方帳號 Messaging API channel access token
+//   LINE_USER_ID              — 詢價通知推播對象（個人）
+//   LINE_GROUP_ID             — 詢價通知推播對象（群組，選填）
+//
+// ⚠️ 上述機密值本地備份於 .env.local（已加入 .gitignore，嚴禁 commit）。
+//    GAS 無法讀取本機檔案，此處僅作為 Script Properties 的人工同步來源。
 // ════════════════════════════════════════════════════════════════
 
 // ── 設定區 ──────────────────────────────────────────────────────
@@ -25,15 +31,19 @@ function doGet(e) {
 
   switch (action) {
     case 'carousel':
-      return jsonpResponse(callback, getSheetData('Carousel-titile'));
+      return jsonpResponse(callback, getCachedSheetData('Carousel-titile'));
     case 'locations':
-      return jsonpResponse(callback, getSheetData('locations'));
+      return jsonpResponse(callback, getCachedSheetData('locations'));
     case 'spaces':
-      return jsonpResponse(callback, getSheetData('ad_spaces'));
+      return jsonpResponse(callback, getCachedSheetData('ad_spaces'));
+    // 局所與版位頁會同時使用兩張表；合併成一次請求，避免兩次
+    // Apps Script 冷啟動及 SpreadsheetApp.openById() 的等待時間。
+    case 'catalog':
+      return jsonpResponse(callback, getCatalogData());
     case 'bookings':
-      return jsonpResponse(callback, getSheetData('bookings'));
+      return jsonpResponse(callback, getCachedSheetData('bookings'));
     case 'seo':
-      return jsonpResponse(callback, getSheetData('SEO'));
+      return jsonpResponse(callback, getCachedSheetData('SEO'));
     case 'submitBooking':
       return submitBookingHandler(e, callback);
     default:
@@ -42,10 +52,10 @@ function doGet(e) {
 }
 
 // ── 工具：讀取工作表 → JSON 陣列 ────────────────────────────────
-function getSheetData(sheetName) {
+function getSheetData(sheetName, ss) {
   try {
-    const ss     = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet  = ss.getSheetByName(sheetName);
+    const spreadsheet = ss || SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet  = spreadsheet.getSheetByName(sheetName);
     if (!sheet) return [];
 
     const values = sheet.getDataRange().getValues();
@@ -60,6 +70,48 @@ function getSheetData(sheetName) {
   } catch (err) {
     return { error: err.message };
   }
+}
+
+// 公開讀取資料短暫快取。資料修改後最多五分鐘才會反映，換取遠低於
+// Apps Script 冷啟動／Sheet 讀取的等待時間；資料量超過 CacheService 限制時會安全略過快取。
+function getCachedSheetData(sheetName) {
+  const key = 'pw:sheet:' + sheetName;
+  const cached = CacheService.getScriptCache().get(key);
+  if (cached) {
+    try { return JSON.parse(cached); } catch (_) { /* 讀取原始資料 */ }
+  }
+  const data = getSheetData(sheetName);
+  putCache(key, data);
+  return data;
+}
+
+function getCatalogData() {
+  const key = 'pw:catalog:v1';
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get(key);
+  if (cached) {
+    try { return JSON.parse(cached); } catch (_) { /* 讀取原始資料 */ }
+  }
+
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const data = {
+      locations: getSheetData('locations', ss),
+      spaces: getSheetData('ad_spaces', ss)
+    };
+    putCache(key, data);
+    return data;
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+
+function putCache(key, data) {
+  try {
+    const value = JSON.stringify(data);
+    // CacheService 單筆上限約 100 KB；過大時直接回傳資料，不影響功能。
+    if (value.length <= 95000) CacheService.getScriptCache().put(key, value, 300);
+  } catch (_) { /* 快取失敗不可影響公開 API */ }
 }
 
 // ── 訂單送出：寫入 customers + bookings → 生成報價單 PDF → 寄信 ──
@@ -109,8 +161,12 @@ function submitBookingHandler(e, callback) {
       const quoteResult = generateQuotePdf(bookingId, customer, items);
       pdfUrl = quoteResult.pdfUrl;
       try {
-        sendQuoteEmail(e.parameter.email, customer.companyName, bookingId, quoteResult.pdfBlob);
+        sendQuoteEmails(customer, bookingId, quoteResult.pdfBlob,
+          parseFloat(e.parameter.totalAmount) || 0, items);
       } catch (_) { /* 寄信失敗不中斷 */ }
+      try {
+        sendLineNotification(bookingId, customer, parseFloat(e.parameter.totalAmount) || 0, pdfUrl);
+      } catch (_) { /* LINE 推播失敗不中斷 */ }
     } catch (_) { /* PDF 失敗不中斷，bookingId 仍回傳 */ }
 
     return jsonpResponse(callback, { success: true, bookingId: bookingId, pdfUrl: pdfUrl });
@@ -225,13 +281,16 @@ function generateQuotePdf(bookingId, customer, items) {
   return { pdfBlob: pdfBlob, pdfUrl: pdfUrl };
 }
 
-// ── 寄信：PDF 附件 ＋ CC 公司信箱 ────────────────────────────────
-function sendQuoteEmail(toEmail, companyName, bookingId, pdfBlob) {
+// ── 寄信：客戶報價單 + 內部詢價通知（含完整聯絡資料與 PDF）───────
+function sendQuoteEmails(customer, bookingId, pdfBlob, totalAmount, items) {
+  const companyName = customer.companyName || '';
+  const customerName = companyName || customer.contactName || '您';
+
+  // 客戶收到正式報價單；公司內部信箱不使用 CC，以免客戶看見內部收件名單。
   MailApp.sendEmail({
-    to:          toEmail,
-    cc:          'service@breathtiger.com',
+    to:          customer.email,
     subject:     '【虎之呼吸科技】郵局牆面廣告報價單　' + bookingId,
-    body:        (companyName || '您') + ' 您好，\n\n' +
+    body:        customerName + ' 您好，\n\n' +
                  '感謝您的詢價！附件為郵局牆面廣告報價單，敬請確認。\n\n' +
                  '如有任何問題，歡迎透過以下方式與我們聯繫：\n' +
                  'Email：service@breathtiger.com\n' +
@@ -239,6 +298,126 @@ function sendQuoteEmail(toEmail, companyName, bookingId, pdfBlob) {
                  '虎之呼吸科技有限公司 敬上',
     attachments: [pdfBlob]
   });
+
+  const itemLines = (items || []).map(function(item, index) {
+    return (index + 1) + '. ' + (item.locationName || '未提供局所') +
+      '｜版位 ' + (item.space_id || '—') +
+      '｜' + (item.months || 1) + ' 個月' +
+      '｜NT$ ' + Number(item.price || 0).toLocaleString();
+  }).join('\n');
+  const internalBody = [
+    '有一筆新的網站詢價，報價單已附檔。',
+    '',
+    '訂單編號：' + bookingId,
+    '公司名稱：' + (customer.companyName || '—'),
+    '統一編號：' + (customer.taxId || '—'),
+    '聯絡人：' + (customer.contactName || '—'),
+    '聯絡電話：' + (customer.phone || '—'),
+    '電子信箱：' + (customer.email || '—'),
+    '公司地址：' + (customer.address || '—'),
+    '詢價合計：NT$ ' + Number(totalAmount || 0).toLocaleString(),
+    '',
+    '詢價版位：',
+    itemLines || '—'
+  ].join('\n');
+
+  MailApp.sendEmail({
+    to:          'service@breathtiger.com,drake@breathtiger.com',
+    subject:     '【新詢價】' + bookingId + '｜' + (companyName || customer.contactName || '未提供名稱'),
+    body:        internalBody,
+    attachments: [pdfBlob]
+  });
+}
+
+// ── LINE 推播：新詢價通知（結構化 Flex Message 卡片）─────────────
+function sendLineNotification(bookingId, customer, totalAmt, pdfUrl) {
+  const props        = PropertiesService.getScriptProperties();
+  const channelToken = props.getProperty('LINE_CHANNEL_ACCESS_TOKEN');
+  if (!channelToken) return;  // 未設定 Script Properties 時直接略過
+
+  const userId  = props.getProperty('LINE_USER_ID');
+  const groupId = props.getProperty('LINE_GROUP_ID');
+  const targets = [userId, groupId].filter(function(id) { return !!id; });
+  if (targets.length === 0) return;
+
+  const message = buildQuoteFlexMessage(bookingId, customer, totalAmt, pdfUrl);
+
+  targets.forEach(function(to) {
+    try {
+      UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
+        method:             'post',
+        contentType:        'application/json',
+        headers:            { Authorization: 'Bearer ' + channelToken },
+        payload:            JSON.stringify({ to: to, messages: [message] }),
+        muteHttpExceptions: true
+      });
+    } catch (_) { /* 單一對象推播失敗不影響其他對象 */ }
+  });
+}
+
+// ── 建立 LINE Flex Message（詢價通知卡片：客戶資訊 + 查看報價單按鈕）
+function buildQuoteFlexMessage(bookingId, customer, totalAmt, pdfUrl) {
+  function row(label, value) {
+    return {
+      type:     'box',
+      layout:   'baseline',
+      spacing:  'sm',
+      contents: [
+        { type: 'text', text: label, color: '#8f8f8f', size: 'sm', flex: 2 },
+        { type: 'text', text: value || '—', color: '#333333', size: 'sm', flex: 5, wrap: true }
+      ]
+    };
+  }
+
+  const bodyContents = [
+    row('公司名稱', customer.companyName),
+    row('聯絡人',   customer.contactName),
+    row('電話',     customer.phone),
+    row('信箱',     customer.email),
+    row('地址',     customer.address),
+    { type: 'separator', margin: 'md' },
+    row('總金額', 'NT$ ' + Math.round(totalAmt || 0).toLocaleString()),
+    row('單號',   bookingId)
+  ];
+
+  const bubble = {
+    type:   'bubble',
+    header: {
+      type:            'box',
+      layout:          'vertical',
+      backgroundColor: '#c0392b',
+      paddingAll:      'md',
+      contents: [
+        { type: 'text', text: '📋 新詢價通知', color: '#ffffff', weight: 'bold', size: 'md' }
+      ]
+    },
+    body: {
+      type:     'box',
+      layout:   'vertical',
+      spacing:  'sm',
+      contents: bodyContents
+    }
+  };
+
+  if (pdfUrl) {
+    bubble.footer = {
+      type:     'box',
+      layout:   'vertical',
+      contents: [{
+        type:   'button',
+        style:  'primary',
+        color:  '#c0392b',
+        height: 'sm',
+        action: { type: 'uri', label: '查看報價單', uri: pdfUrl }
+      }]
+    };
+  }
+
+  return {
+    type:     'flex',
+    altText:  '新詢價通知：' + (customer.companyName || customer.contactName || '客戶') + ' 索取報價單',
+    contents: bubble
+  };
 }
 
 function generateBookingId() {

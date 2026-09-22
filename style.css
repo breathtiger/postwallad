@@ -7,6 +7,14 @@
 body { padding-top: 56px; }
 #heroSection { margin-top: -56px; padding-top: 0; }
 
+/* 首頁不把可操作首屏綁定在 Apps Script 與雲端圖片的載入速度上。 */
+.hero-fallback {
+  background:
+    linear-gradient(135deg, rgba(0, 76, 48, .96), rgba(0, 43, 27, .88)),
+    #005a36;
+}
+.hero-fallback .hero-eyebrow { color: #b8e5c9; letter-spacing: .14em; }
+
 /* ── 輪播圖（Bootstrap 5 img + carousel-caption 結構）── */
 
 /* 圖片滿版、固定高度、裁切 */
@@ -15,6 +23,9 @@ body { padding-top: 56px; }
   object-fit: cover;
   object-position: center;
 }
+
+/* 預留圖片顯示比例，降低延遲載入圖片時的版面位移。 */
+.card-img-top { aspect-ratio: 16 / 9; }
 
 /* caption 覆蓋整張投影片，加深色漸層 */
 .carousel-hero-caption {
