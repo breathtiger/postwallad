@@ -78,9 +78,9 @@ function escHtml(str) {
 function jsonp(action, callbackFn, options = {}) {
   const callbackName = '_cb_' + action + '_' + Date.now();
   const script = document.createElement('script');
-  const timeoutMs = options.timeoutMs || 12000;
+  const timeoutMs = options.timeoutMs || 30000;
 
-  // 公開資料逾時後快速顯示錯誤／備用內容，避免訪客長時間卡在轉圈。
+  // Apps Script 冷啟動可能較久；逾時後才顯示錯誤，避免誤判為載入失敗。
   const timer = setTimeout(() => {
     window[callbackName] = function() {};  // no-op 避免遲到回應 crash
     script.remove();
@@ -104,28 +104,32 @@ function jsonp(action, callbackFn, options = {}) {
   document.body.appendChild(script);
 }
 
-// 新版後端提供 catalog 以一次取得局所和版位；若正式環境仍在舊版
-// Apps Script，無縫退回既有的兩個端點，避免前端先發布時整頁無資料。
+// 舊版 Apps Script 的 locations / spaces 端點。兩者同步發出，避免讓
+// 局所列表先等待 catalog 的冷啟動；新版後端會各自從快取讀取，仍很快。
+function loadLegacyCatalog(callbackFn) {
+  let locations = null;
+  let spaces = null;
+  const done = function() {
+    if (locations !== null && spaces !== null) callbackFn(locations, spaces);
+  };
+  jsonp('locations', function(data) {
+    locations = Array.isArray(data) ? data : [];
+    done();
+  });
+  jsonp('spaces', function(data) {
+    spaces = Array.isArray(data) ? data : [];
+    done();
+  });
+}
+
+// 保留新版合併端點，供未來後端完全更新後使用。
 function loadCatalog(callbackFn) {
   jsonp('catalog', function(data) {
     if (data && Array.isArray(data.locations) && Array.isArray(data.spaces)) {
       callbackFn(data.locations, data.spaces);
       return;
     }
-
-    let locations = null;
-    let spaces = null;
-    const done = function() {
-      if (locations !== null && spaces !== null) callbackFn(locations, spaces);
-    };
-    jsonp('locations', function(data) {
-      locations = Array.isArray(data) ? data : [];
-      done();
-    });
-    jsonp('spaces', function(data) {
-      spaces = Array.isArray(data) ? data : [];
-      done();
-    });
+    loadLegacyCatalog(callbackFn);
   }, { timeoutMs: 5000 });
 }
 
@@ -224,8 +228,7 @@ function buildCarousel(slides) {
 (function initLocations() {
   if (!document.getElementById('locationsGrid')) return;
 
-  // 優先用合併 API；尚未部署新版後端時自動相容舊 API。
-  loadCatalog(function(locations, spaces) {
+  loadLegacyCatalog(function(locations, spaces) {
     renderLocations(locations, spaces);
   });
 })();
@@ -387,7 +390,7 @@ function isAvailable(space) {
   let _location  = null;
   let _spaces    = [];
 
-  loadCatalog(function(locations, spaces) {
+  loadLegacyCatalog(function(locations, spaces) {
     _location = locations.find(l => l['location_id'] === locationId) || null;
     _spaces = spaces.filter(s => s['location_id'] === locationId && isAvailable(s));
     tryRender();
