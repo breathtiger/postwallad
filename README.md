@@ -25,6 +25,14 @@
 
 ## 技術棧
 
+### 公開目錄載入（2026-09-23 修正）
+
+局所與版位頁優先讀取同源 `data/catalog.json`，不再等待 Apps Script 冷啟動。目錄僅含公開展示欄位，不包含內部成本或客戶資料。JSON 不可用時才退回既有 JSONP API。
+
+`.github/workflows/publish.yml` 每半小時嘗試從 Sheets API 同步目錄並部署 Pages，亦可在 Actions 手動執行。GitHub 排程可能延遲；上游失敗時保留上次成功目錄，頁面顯示資料更新時間，售價與狀態仍以人工確認為準。本機可執行 `node scripts/sync-catalog.mjs` 重新同步。Pages 發布來源設定為 GitHub Actions。
+
+詢價提交、PDF 與寄信仍依賴 Apps Script；此目錄修正不代表雲端寄信程式已更新。
+
 - 純靜態前端：HTML / CSS / Vanilla JS
 - UI：Bootstrap 5.3.3 + Font Awesome 6（cdnjs CDN）
 - 後端：Google Apps Script（`Code.gs`）

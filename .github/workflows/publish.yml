@@ -1,0 +1,59 @@
+name: Sync catalog and publish
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '13,43 * * * *'
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Refresh public catalog
+        id: sync
+        continue-on-error: true
+        run: node scripts/sync-catalog.mjs
+      - name: Report upstream outage
+        if: steps.sync.outcome == 'failure'
+        run: echo '::warning::Google API refresh failed. Publishing the last validated catalog; its timestamp remains visible on the website.'
+      - name: Preserve validated catalog
+        if: steps.sync.outcome == 'success'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/catalog.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'data: refresh public catalog'
+            git push origin HEAD:main
+          fi
+      - name: Assemble public website
+        run: |
+          mkdir -p _site/data
+          cp index.html locations.html spaces.html quotation.html site.js style.css CNAME _site/
+          cp data/catalog.json _site/data/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

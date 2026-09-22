@@ -122,15 +122,29 @@ function loadLegacyCatalog(callbackFn) {
   });
 }
 
-// 保留新版合併端點，供未來後端完全更新後使用。
-function loadCatalog(callbackFn) {
-  jsonp('catalog', function(data) {
-    if (data && Array.isArray(data.locations) && Array.isArray(data.spaces)) {
-      callbackFn(data.locations, data.spaces);
-      return;
+// 公開目錄與網頁同源發布，瀏覽頁不再依賴 Apps Script 的可用性。
+async function loadCatalog(callbackFn) {
+  try {
+    const response = await fetch('data/catalog.json', {signal: AbortSignal.timeout(8000)});
+    if (!response.ok) throw new Error('Catalog unavailable');
+    const data = await response.json();
+    if (!Array.isArray(data.locations) || !data.locations.length || !Array.isArray(data.spaces)) {
+      throw new Error('Invalid catalog');
     }
+    callbackFn(data.locations, data.spaces);
+    if (data.updatedAt) {
+      const parent = document.getElementById('locationsGrid') || document.getElementById('spacesList');
+      if (parent) {
+        const note = document.createElement('p');
+        note.className = 'small text-muted mt-3';
+        note.textContent = '版位資料更新：' + new Date(data.updatedAt).toLocaleString('zh-TW') + '。刊登狀態與報價以專人確認為準。';
+        parent.after(note);
+      }
+    }
+  } catch (error) {
+    console.warn('Static catalog unavailable; trying live data', error);
     loadLegacyCatalog(callbackFn);
-  }, { timeoutMs: 5000 });
+  }
 }
 
 // ════════════════════════════════
@@ -228,7 +242,7 @@ function buildCarousel(slides) {
 (function initLocations() {
   if (!document.getElementById('locationsGrid')) return;
 
-  loadLegacyCatalog(function(locations, spaces) {
+  loadCatalog(function(locations, spaces) {
     renderLocations(locations, spaces);
   });
 })();
@@ -247,7 +261,7 @@ function renderLocations(locations, spaces) {
     // 區分「API 未部署」vs「真的沒資料」
     document.getElementById('errorState').innerHTML =
       '<i class="fa-solid fa-triangle-exclamation me-2"></i>' +
-      '資料載入失敗。請確認 Apps Script 已重新部署，並開放「任何人」存取。';
+      '目前無法載入版位資料，請<a href="locations.html" class="alert-link">重新載入</a>，或<a href="mailto:service@breathtiger.com" class="alert-link">聯絡我們協助選位</a>。';
     document.getElementById('errorState').classList.remove('d-none');
     return;
   }
@@ -390,7 +404,7 @@ function isAvailable(space) {
   let _location  = null;
   let _spaces    = [];
 
-  loadLegacyCatalog(function(locations, spaces) {
+  loadCatalog(function(locations, spaces) {
     _location = locations.find(l => l['location_id'] === locationId) || null;
     _spaces = spaces.filter(s => s['location_id'] === locationId && isAvailable(s));
     tryRender();
