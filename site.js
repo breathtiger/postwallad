@@ -104,6 +104,31 @@ function jsonp(action, callbackFn, options = {}) {
   document.body.appendChild(script);
 }
 
+// 新版後端提供 catalog 以一次取得局所和版位；若正式環境仍在舊版
+// Apps Script，無縫退回既有的兩個端點，避免前端先發布時整頁無資料。
+function loadCatalog(callbackFn) {
+  jsonp('catalog', function(data) {
+    if (data && Array.isArray(data.locations) && Array.isArray(data.spaces)) {
+      callbackFn(data.locations, data.spaces);
+      return;
+    }
+
+    let locations = null;
+    let spaces = null;
+    const done = function() {
+      if (locations !== null && spaces !== null) callbackFn(locations, spaces);
+    };
+    jsonp('locations', function(data) {
+      locations = Array.isArray(data) ? data : [];
+      done();
+    });
+    jsonp('spaces', function(data) {
+      spaces = Array.isArray(data) ? data : [];
+      done();
+    });
+  }, { timeoutMs: 5000 });
+}
+
 // ════════════════════════════════
 // 首頁：輪播圖
 // ════════════════════════════════
@@ -199,9 +224,9 @@ function buildCarousel(slides) {
 (function initLocations() {
   if (!document.getElementById('locationsGrid')) return;
 
-  // 一次取得局所與版位，避免兩次 Apps Script 冷啟動與重複渲染。
-  jsonp('catalog', function(data) {
-    renderLocations(data && data.locations, data && data.spaces);
+  // 優先用合併 API；尚未部署新版後端時自動相容舊 API。
+  loadCatalog(function(locations, spaces) {
+    renderLocations(locations, spaces);
   });
 })();
 
@@ -362,9 +387,7 @@ function isAvailable(space) {
   let _location  = null;
   let _spaces    = [];
 
-  jsonp('catalog', function(data) {
-    const locations = Array.isArray(data && data.locations) ? data.locations : [];
-    const spaces = Array.isArray(data && data.spaces) ? data.spaces : [];
+  loadCatalog(function(locations, spaces) {
     _location = locations.find(l => l['location_id'] === locationId) || null;
     _spaces = spaces.filter(s => s['location_id'] === locationId && isAvailable(s));
     tryRender();
